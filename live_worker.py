@@ -526,11 +526,15 @@ class LiveWorker:
                     time.sleep(5)
                     continue
 
+                print(f"[LOOP] mins_left={tick['mins_left']:.1f}, btc={tick['btc_price']:.2f}", flush=True)
+                print(f"[LOOP] YES/UP ask={tick['yes_ask']}c, NO/DOWN ask={tick['no_ask']}c", flush=True)
+
                 # Log every tick
                 self.tick_logger.log(tick)
                 self.last_tick = tick
 
                 window_id = tick['window_id']
+                print(f"[LOOP] window_id={window_id}, current_window={self.current_window}", flush=True)
 
                 # Check if previous window needs settlement
                 if last_window and last_window != window_id:

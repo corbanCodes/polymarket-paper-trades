@@ -285,8 +285,12 @@ def get_market_tick() -> Optional[Dict]:
 
     # Try to get orderbook prices for more accuracy
     # yes_token = UP token, no_token = DOWN token
+    print(f"[API] Fetching orderbook for UP token...", flush=True)
     up_book = get_orderbook_prices(parsed.get('yes_token_id'))
+    print(f"[API] UP orderbook: {up_book}", flush=True)
+    print(f"[API] Fetching orderbook for DOWN token...", flush=True)
     down_book = get_orderbook_prices(parsed.get('no_token_id'))
+    print(f"[API] DOWN orderbook: {down_book}", flush=True)
 
     # Use orderbook if available, else Gamma API prices
     if up_book:
