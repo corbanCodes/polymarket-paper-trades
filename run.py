@@ -7,20 +7,27 @@ Usage:
     python run.py worker    # Runs only worker
     python run.py dashboard # Runs only dashboard
 """
-
 import sys
+print("[RUN.PY] Starting...", file=sys.stderr, flush=True)
+print("[RUN.PY] Starting...", flush=True)
+
 import threading
 import time
 import os
 
 def run_worker():
     """Run the live trading worker"""
+    print("[WORKER] Starting live worker...", file=sys.stderr, flush=True)
     print("[WORKER] Starting live worker...", flush=True)
     try:
+        print("[WORKER] Importing LiveWorker...", flush=True)
         from live_worker import LiveWorker
+        print("[WORKER] Creating worker instance...", flush=True)
         worker = LiveWorker()
+        print("[WORKER] Starting worker.run()...", flush=True)
         worker.run()
     except Exception as e:
+        print(f"[WORKER] ERROR: {e}", file=sys.stderr, flush=True)
         print(f"[WORKER] ERROR: {e}", flush=True)
         import traceback
         traceback.print_exc()
