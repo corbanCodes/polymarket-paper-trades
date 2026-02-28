@@ -15,9 +15,15 @@ import os
 
 def run_worker():
     """Run the live trading worker"""
-    from live_worker import LiveWorker
-    worker = LiveWorker()
-    worker.run()
+    print("[WORKER] Starting live worker...", flush=True)
+    try:
+        from live_worker import LiveWorker
+        worker = LiveWorker()
+        worker.run()
+    except Exception as e:
+        print(f"[WORKER] ERROR: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
 
 def run_dashboard():
     """Run the Flask dashboard"""
@@ -38,19 +44,20 @@ def main():
 
     else:
         # Run both
-        print("=" * 60)
-        print("POLYMARKET PAPER TRADING - COMBINED MODE")
-        print("=" * 60)
-        print("Starting worker in background thread...")
-        print("Starting web dashboard...")
-        print("=" * 60 + "\n")
+        print("=" * 60, flush=True)
+        print("POLYMARKET PAPER TRADING - COMBINED MODE", flush=True)
+        print("=" * 60, flush=True)
+        print("Starting worker in background thread...", flush=True)
 
         # Start worker in background thread
         worker_thread = threading.Thread(target=run_worker, daemon=True)
         worker_thread.start()
 
         # Give worker a moment to initialize
-        time.sleep(2)
+        time.sleep(3)
+
+        print("Starting web dashboard...", flush=True)
+        print("=" * 60 + "\n", flush=True)
 
         # Run dashboard in main thread (blocks)
         run_dashboard()

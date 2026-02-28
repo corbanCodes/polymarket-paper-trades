@@ -1271,6 +1271,12 @@ def api_state():
     return jsonify(state or {})
 
 
+@app.route('/health')
+def health():
+    """Health check endpoint for Railway - no auth required"""
+    return jsonify({'status': 'ok', 'platform': 'polymarket'})
+
+
 # =============================================================================
 # MAIN
 # =============================================================================
