@@ -368,11 +368,14 @@ class LiveWorker:
         self.start_time = datetime.now()
         self.last_tick = None
 
+        # Track opening prices for each window (strike = BTC price at window start)
+        self.window_strikes: Dict[str, float] = {}
+
         # Initialize all bots
         for bot_id, config in ALL_BOTS.items():
             self.bots[bot_id] = LiveBotState(bot_id, config)
 
-        print(f"Initialized {len(self.bots)} bots")
+        print(f"Initialized {len(self.bots)} bots", flush=True)
 
     def save_state(self):
         """Save current state to JSON for web dashboard"""
@@ -517,8 +520,9 @@ class LiveWorker:
                     time.sleep(30)
                     continue
 
-                # Validate tick data
-                if tick['strike_price'] == 0 or tick['mins_left'] is None:
+                # Validate tick data (strike_price=0 is OK, we set it below)
+                if tick['mins_left'] is None:
+                    self.log("Invalid tick: mins_left is None")
                     time.sleep(5)
                     continue
 
@@ -536,14 +540,27 @@ class LiveWorker:
                     # Note: This is approximate - ideally we'd query settlement data
                     self.log(f"Window {last_window} ended, new window: {window_id}")
 
-                # New window detection
+                # New window detection - track opening price as strike
                 if window_id != self.current_window:
+                    # Record the current BTC price as the strike for this window
+                    # This is the "price to beat" shown on Polymarket UI
+                    self.window_strikes[window_id] = tick['btc_price']
+                    strike = tick['btc_price']
+
                     self.log(f"\n{'='*50}")
                     self.log(f"NEW WINDOW: {window_id}")
-                    self.log(f"Strike: ${tick['strike_price']:,.2f}")
-                    self.log(f"BTC: ${tick['btc_price']:,.2f}")
+                    self.log(f"Opening Price (Strike): ${strike:,.2f}")
+                    self.log(f"UP = BTC >= ${strike:,.2f} | DOWN = BTC < ${strike:,.2f}")
                     self.log(f"{'='*50}")
                     self.current_window = window_id
+
+                # Use tracked strike price for this window
+                if window_id in self.window_strikes:
+                    tick['strike_price'] = self.window_strikes[window_id]
+                else:
+                    # Shouldn't happen, but fallback to current price
+                    tick['strike_price'] = tick['btc_price']
+                    self.window_strikes[window_id] = tick['btc_price']
 
                 # Process tick for all bots
                 self.process_tick(tick)

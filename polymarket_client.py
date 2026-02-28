@@ -136,17 +136,24 @@ def parse_market_data(market: Dict) -> Optional[Dict]:
     """
     Parse raw Polymarket market data into standardized format.
 
+    Polymarket BTC 15-min markets use UP/DOWN (not YES/NO):
+    - UP = BTC finishes >= opening price (maps to YES in our system)
+    - DOWN = BTC finishes < opening price (maps to NO in our system)
+
+    Note: The "strike price" (price to beat) is the BTC price at window start.
+    The API doesn't provide this - we track it ourselves in the worker.
+
     Returns dict with:
         - market_id: str
         - slug: str
         - question: str
-        - strike_price: float (extracted from question)
+        - strike_price: float (0 - tracked by worker)
         - end_time: str (ISO format)
         - mins_left: float
-        - yes_price: int (cents)
-        - no_price: int (cents)
-        - yes_token_id: str
-        - no_token_id: str
+        - up_price: int (cents) - maps to YES
+        - down_price: int (cents) - maps to NO
+        - up_token_id: str
+        - down_token_id: str
     """
     if not market:
         return None
@@ -158,16 +165,9 @@ def parse_market_data(market: Dict) -> Optional[Dict]:
         question = market.get('question', '')
         end_time = market.get('endDate', '')
 
-        # Parse strike price from question
-        # Format: "Will BTC be above $XX,XXX.XX at..."
+        # Strike price is NOT in the API - it's the BTC price at window start
+        # We'll track this in the worker when we first see a new window
         strike = 0.0
-        if '$' in question:
-            try:
-                price_str = question.split('$')[1].split(' ')[0].split('?')[0]
-                price_str = price_str.replace(',', '').replace('at', '').strip()
-                strike = float(price_str)
-            except:
-                pass
 
         # Calculate minutes left
         mins_left = None
@@ -179,38 +179,47 @@ def parse_market_data(market: Dict) -> Optional[Dict]:
             except:
                 pass
 
-        # Get prices - Polymarket uses outcomePrices or tokens array
-        yes_price = 50  # Default
-        no_price = 50
+        # Get prices - Polymarket returns [Up, Down] in outcomePrices
+        up_price = 50  # Default
+        down_price = 50
 
         outcome_prices = market.get('outcomePrices', [])
-        if outcome_prices and len(outcome_prices) >= 2:
-            try:
-                yes_price = int(float(outcome_prices[0]) * 100)
-                no_price = int(float(outcome_prices[1]) * 100)
-            except:
-                pass
+        if outcome_prices:
+            # Handle both string "[\"0.5\", \"0.5\"]" and list formats
+            if isinstance(outcome_prices, str):
+                import json
+                outcome_prices = json.loads(outcome_prices)
+            if len(outcome_prices) >= 2:
+                try:
+                    up_price = int(float(outcome_prices[0]) * 100)
+                    down_price = int(float(outcome_prices[1]) * 100)
+                except:
+                    pass
 
-        # Get token IDs for trading
+        # Get token IDs for trading - [Up token, Down token]
         tokens = market.get('clobTokenIds', [])
-        yes_token = tokens[0] if len(tokens) > 0 else None
-        no_token = tokens[1] if len(tokens) > 1 else None
+        if isinstance(tokens, str):
+            import json
+            tokens = json.loads(tokens)
+        up_token = tokens[0] if len(tokens) > 0 else None
+        down_token = tokens[1] if len(tokens) > 1 else None
 
         return {
             'market_id': market_id,
             'slug': slug,
             'question': question,
-            'strike_price': strike,
+            'strike_price': strike,  # Will be set by worker
             'end_time': end_time,
             'mins_left': mins_left,
-            'yes_price': yes_price,
-            'no_price': no_price,
-            'yes_token_id': yes_token,
-            'no_token_id': no_token,
+            # Map UP/DOWN to YES/NO for compatibility with bot logic
+            'yes_price': up_price,    # UP = YES (BTC above strike)
+            'no_price': down_price,   # DOWN = NO (BTC below strike)
+            'yes_token_id': up_token,
+            'no_token_id': down_token,
         }
 
     except Exception as e:
-        print(f"Error parsing market: {e}")
+        print(f"Error parsing market: {e}", flush=True)
         return None
 
 def get_orderbook_prices(token_id: str) -> Optional[Dict]:
@@ -251,6 +260,9 @@ def get_market_tick() -> Optional[Dict]:
     """
     Get all current market data in one call.
     Returns standardized tick format for the worker.
+
+    Note: strike_price will be 0 from API - worker tracks opening price.
+    UP/DOWN prices are mapped to yes/no for bot compatibility.
     """
     # Get market
     print("[API] Searching for BTC 15-min market...", flush=True)
@@ -272,35 +284,39 @@ def get_market_tick() -> Optional[Dict]:
         return None
 
     # Try to get orderbook prices for more accuracy
-    yes_book = get_orderbook_prices(parsed.get('yes_token_id'))
-    no_book = get_orderbook_prices(parsed.get('no_token_id'))
+    # yes_token = UP token, no_token = DOWN token
+    up_book = get_orderbook_prices(parsed.get('yes_token_id'))
+    down_book = get_orderbook_prices(parsed.get('no_token_id'))
 
     # Use orderbook if available, else Gamma API prices
-    if yes_book:
-        yes_ask = yes_book['ask']
-        yes_bid = yes_book['bid']
+    if up_book:
+        yes_ask = up_book['ask']  # UP ask = YES ask
+        yes_bid = up_book['bid']
     else:
         yes_ask = parsed['yes_price']
         yes_bid = max(0, parsed['yes_price'] - 2)
 
-    if no_book:
-        no_ask = no_book['ask']
-        no_bid = no_book['bid']
+    if down_book:
+        no_ask = down_book['ask']  # DOWN ask = NO ask
+        no_bid = down_book['bid']
     else:
         no_ask = parsed['no_price']
         no_bid = max(0, parsed['no_price'] - 2)
 
     # Build tick
+    # Note: strike_price=0 here, worker will set it when window starts
     return {
         'timestamp': datetime.now(timezone.utc).isoformat(),
         'window_id': parsed['slug'],
         'market_id': parsed['market_id'],
         'question': parsed['question'],
-        'strike_price': parsed['strike_price'],
+        'strike_price': 0,  # Worker tracks this as opening price
         'mins_left': parsed['mins_left'],
         'btc_price': btc_price,
+        # UP maps to YES (BTC above opening = UP wins)
         'yes_ask': yes_ask,
         'yes_bid': yes_bid,
+        # DOWN maps to NO (BTC below opening = DOWN wins)
         'no_ask': no_ask,
         'no_bid': no_bid,
         'yes_token_id': parsed.get('yes_token_id'),
