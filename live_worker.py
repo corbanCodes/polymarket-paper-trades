@@ -509,7 +509,9 @@ class LiveWorker:
         while True:
             try:
                 # Get current market data
+                print("[LOOP] Fetching market tick...", flush=True)
                 tick = get_market_tick()
+                print(f"[LOOP] Got tick: {tick is not None}", flush=True)
                 if not tick:
                     self.log("No active market found, waiting...")
                     time.sleep(30)

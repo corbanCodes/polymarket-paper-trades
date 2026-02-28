@@ -103,19 +103,25 @@ def get_current_btc_15m_market() -> Optional[Dict]:
     # Try current window
     current_ts = get_current_window_timestamp()
     slug = generate_market_slug(current_ts)
+    print(f"[API] Trying slug: {slug}", flush=True)
     market = get_market_by_slug(slug)
     if market:
+        print(f"[API] Found market by current slug", flush=True)
         return market
 
     # Try next window (in case current just ended)
     next_ts = get_next_window_timestamp()
     slug = generate_market_slug(next_ts)
+    print(f"[API] Trying next slug: {slug}", flush=True)
     market = get_market_by_slug(slug)
     if market:
+        print(f"[API] Found market by next slug", flush=True)
         return market
 
     # Fallback: search active markets
+    print(f"[API] Searching active BTC markets...", flush=True)
     markets = get_active_btc_markets()
+    print(f"[API] Found {len(markets)} active BTC 15m markets", flush=True)
     if markets:
         # Return the one ending soonest
         return sorted(markets, key=lambda m: m.get('endDate', ''))[0]
@@ -247,16 +253,21 @@ def get_market_tick() -> Optional[Dict]:
     Returns standardized tick format for the worker.
     """
     # Get market
+    print("[API] Searching for BTC 15-min market...", flush=True)
     market = get_current_btc_15m_market()
+    print(f"[API] Market found: {market is not None}", flush=True)
     if not market:
         return None
 
     parsed = parse_market_data(market)
+    print(f"[API] Parsed: {parsed is not None}", flush=True)
     if not parsed:
         return None
 
     # Get BTC price
+    print("[API] Fetching BTC price...", flush=True)
     btc_price = get_btc_price()
+    print(f"[API] BTC price: {btc_price}", flush=True)
     if not btc_price:
         return None
 
