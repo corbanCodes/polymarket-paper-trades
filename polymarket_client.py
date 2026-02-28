@@ -285,27 +285,34 @@ def get_market_tick() -> Optional[Dict]:
 
     # Try to get orderbook prices for more accuracy
     # yes_token = UP token, no_token = DOWN token
-    print(f"[API] Fetching orderbook for UP token...", flush=True)
     up_book = get_orderbook_prices(parsed.get('yes_token_id'))
-    print(f"[API] UP orderbook: {up_book}", flush=True)
-    print(f"[API] Fetching orderbook for DOWN token...", flush=True)
     down_book = get_orderbook_prices(parsed.get('no_token_id'))
-    print(f"[API] DOWN orderbook: {down_book}", flush=True)
 
-    # Use orderbook if available, else Gamma API prices
-    if up_book:
-        yes_ask = up_book['ask']  # UP ask = YES ask
+    # Validate orderbook data - if spread is too wide (>20), it's unreliable
+    # Also check that UP + DOWN prices sum to roughly 100 (arbitrage constraint)
+    use_orderbook = False
+    if up_book and down_book:
+        up_spread = up_book.get('spread', 100)
+        down_spread = down_book.get('spread', 100)
+        # Check spreads are reasonable and prices sum to ~100
+        if up_spread <= 20 and down_spread <= 20:
+            price_sum = up_book['ask'] + down_book['ask']
+            if 95 <= price_sum <= 105:  # Should sum to ~100
+                use_orderbook = True
+                print(f"[API] Using CLOB orderbook: UP={up_book['ask']}c, DOWN={down_book['ask']}c", flush=True)
+
+    if use_orderbook:
+        yes_ask = up_book['ask']
         yes_bid = up_book['bid']
-    else:
-        yes_ask = parsed['yes_price']
-        yes_bid = max(0, parsed['yes_price'] - 2)
-
-    if down_book:
-        no_ask = down_book['ask']  # DOWN ask = NO ask
+        no_ask = down_book['ask']
         no_bid = down_book['bid']
     else:
+        # Fall back to Gamma API prices
+        yes_ask = parsed['yes_price']
+        yes_bid = max(0, parsed['yes_price'] - 2)
         no_ask = parsed['no_price']
         no_bid = max(0, parsed['no_price'] - 2)
+        print(f"[API] Using Gamma API prices: UP={yes_ask}c, DOWN={no_ask}c", flush=True)
 
     # Build tick
     # Note: strike_price=0 here, worker will set it when window starts
